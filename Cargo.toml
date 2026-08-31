@@ -23,6 +23,17 @@ serde_json = "1.0.151"
 
 [build-dependencies]
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+# No la usamos desde el código: está acá para forzar el orden de compilación.
+# `espeak-rs-sys` no declara `links`, así que cargo no pone ninguna arista entre
+# su build script y el nuestro, y el nuestro (que es instantáneo) gana la carrera
+# y no encuentra el `espeak-ng-data` que el otro todavía no generó. Como
+# build-dependency, cargo tiene que terminarla —build script incluido— antes de
+# siquiera compilar `build.rs`.
+#
+# Las features tienen que coincidir con las que `espeak-rs` le pide, o el
+# resolver v2 arma dos unidades distintas y sólo una genera `espeak-ng-data`
+# (`data.cmake` se incluye únicamente si `COMPILE_INTONATIONS=ON`).
+espeak-rs-sys = { version = "0.2.0", features = ["compile-espeak-intonations"] }
 
 [profile.release]
 opt-level = 3

@@ -533,6 +533,7 @@ dependencies = [
  "clap",
  "dirs",
  "espeak-rs",
+ "espeak-rs-sys",
  "flate2",
  "hound",
  "piper-rs",

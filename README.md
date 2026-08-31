@@ -145,6 +145,20 @@ El binario queda en `target/release/mcpiper`. La primera compilación tarda unos
 minutos: se compila espeak-ng con CMake, se compilan libvorbis y libogg, y se baja el ONNX
 Runtime precompilado.
 
+Dos cosas del build que conviene saber:
+
+- **espeak-ng se compila dos veces.** `mcpiper` declara `espeak-rs-sys` también
+  como build-dependency. No la usa desde el código: es la única forma de que
+  cargo garantice que el `espeak-ng-data` exista antes de que corra nuestro
+  `build.rs`, que es el que lo empaqueta dentro del ejecutable. Las
+  build-dependencies usan otro perfil, así que nunca se unifican con las normales.
+- **La ruta del proyecto no puede ser muy profunda.** espeak-ng guarda su
+  directorio de datos en un buffer de 160 caracteres, y durante el build esa ruta
+  es `<target>/release/build/espeak-rs-sys-<hash>/out/build` (unos 60 caracteres
+  más que el directorio del proyecto). Si se pasa, la compilación de los datos
+  falla con `Error processing file '.../phsource/intonation'`. Con
+  `CARGO_TARGET_DIR` corto se arregla.
+
 ### Binarios para las tres plataformas
 
 `.github/workflows/build.yml` compila en runners nativos de Linux (x86_64 y

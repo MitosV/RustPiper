@@ -36,7 +36,6 @@ defaults:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  TARGET: x86_64-pc-windows-msvc
   ASSET: mcpiper-windows-x86_64
   # Ruta corta a propósito: el árbol de CMake de espeak-ng anida mucho y con el
   # `target/` por defecto la compilación roza el límite de 260 caracteres.
@@ -87,8 +86,15 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           rustup update stable --no-self-update
           rustup default stable
-          rustup target add $env:TARGET
           rustc -vV
+          # Compilamos nativo (sin --target) para no construir espeak-ng dos
+          # veces: con --target, cargo separa host y target y la build-dependency
+          # que ordena el build se compila aparte. El triple del runner ya es el
+          # que queremos, pero más vale verificarlo que suponerlo.
+          $host_triple = (rustc -vV | Select-String '^host: ').Line -replace '^host: '
+          if ($host_triple -ne 'x86_64-pc-windows-msvc') {
+            throw "el runner no es x86_64-pc-windows-msvc sino $host_triple"
+          }
 
       - name: Caché del registro de cargo
         uses: actions/cache@v4
@@ -107,19 +113,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          cargo test --release --locked --target $env:TARGET
+          cargo test --release --locked
 
       - name: Compilar
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          cargo build --release --locked --target $env:TARGET
+          cargo build --release --locked
 
       - name: Autodiagnóstico
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          $exe = "${env:CARGO_TARGET_DIR}\${env:TARGET}\release\mcpiper.exe"
+          $exe = "${env:CARGO_TARGET_DIR}\release\mcpiper.exe"
           if (-not (Test-Path $exe)) { throw "no se generó $exe" }
           "EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           & $exe --version

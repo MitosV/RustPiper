@@ -55,8 +55,13 @@ jobs:
         run: |
           rustup update stable --no-self-update
           rustup default stable
-          rustup target add ${{ matrix.target }}
           rustc -vV
+          # Compilamos nativo, sin --target: con --target cargo separa las
+          # unidades de host y de target y espeak-ng se compila dos veces (la
+          # build-dependency que ordena el build es una unidad de host). El
+          # triple del runner ya es el que queremos; lo verificamos.
+          rustc -vV | grep -qx 'host: ${{ matrix.target }}' \
+            || { echo "el runner no es ${{ matrix.target }}"; rustc -vV; exit 1; }
 
       - name: Caché de cargo
         uses: actions/cache@v4
@@ -68,17 +73,19 @@ jobs:
             target
           key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ matrix.target }}-cargo-
+        # `matrix.target` acá es sólo la clave de la caché y el nombre del
+        # artefacto; ya no se le pasa a cargo.
 
       - name: Tests
-        run: cargo test --release --target ${{ matrix.target }}
+        run: cargo test --release --locked
 
       - name: Compilar
-        run: cargo build --release --locked --target ${{ matrix.target }}
+        run: cargo build --release --locked
 
       - name: Autodiagnóstico del binario
         shell: bash
         run: |
-          BIN=target/${{ matrix.target }}/release/mcpiper
+          BIN=target/release/mcpiper
           "$BIN" --version
           "$BIN" --self-test
 
@@ -86,7 +93,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/mcpiper dist/
+          cp target/release/mcpiper dist/
           cp README.md USO.md LICENSE NOTICE.md dist/
           tar -czf "${{ matrix.asset }}.tar.gz" -C dist .
 

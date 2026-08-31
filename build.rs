@@ -18,8 +18,13 @@ fn main() {
     let data_dir = locate_espeak_data(&out_dir).unwrap_or_else(|| {
         panic!(
             "no encontré `espeak-ng-data`. Se esperaba que el build de espeak-rs-sys \
-             lo generara bajo el directorio `build/` de cargo. Podés apuntarlo a mano \
-             con MCPIPER_ESPEAK_DATA_DIR=/ruta/a/espeak-ng-data"
+             lo generara en alguno de estos directorios:\n  {}\n\
+             Podés apuntarlo a mano con MCPIPER_ESPEAK_DATA_DIR=/ruta/a/espeak-ng-data",
+            build_dirs(&out_dir)
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n  ")
         )
     });
 
@@ -114,7 +119,10 @@ fn collect(root: &Path, dir: &Path, filter: &LangFilter, out: &mut Vec<(String, 
     }
 }
 
-/// Busca `espeak-ng-data` en el `OUT_DIR` de espeak-rs-sys, que es hermano del nuestro.
+/// Busca `espeak-ng-data` en el `OUT_DIR` de espeak-rs-sys.
+///
+/// Que exista está garantizado por la build-dependency declarada en `Cargo.toml`;
+/// acá sólo hay que dar con la carpeta.
 fn locate_espeak_data(our_out_dir: &Path) -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("MCPIPER_ESPEAK_DATA_DIR") {
         let p = PathBuf::from(dir);
@@ -123,33 +131,58 @@ fn locate_espeak_data(our_out_dir: &Path) -> Option<PathBuf> {
         }
     }
 
-    // OUT_DIR = <target>/<profile>/build/mcpiper-<hash>/out
-    let build_dir = our_out_dir.parent()?.parent()?;
-    let mut candidates: Vec<PathBuf> = fs::read_dir(build_dir)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("espeak-rs-sys-"))
-        })
-        .collect();
-    // Varias carpetas `espeak-rs-sys-*` conviven (script vs salida); preferimos la más nueva.
-    candidates.sort();
-    candidates.reverse();
+    for build_dir in build_dirs(our_out_dir) {
+        let mut candidates: Vec<PathBuf> = match fs::read_dir(&build_dir) {
+            Ok(entries) => entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with("espeak-rs-sys-"))
+                })
+                .collect(),
+            Err(_) => continue,
+        };
+        // Varias carpetas `espeak-rs-sys-*` conviven (script vs salida); preferimos la más nueva.
+        candidates.sort();
+        candidates.reverse();
 
-    for base in candidates {
-        // Orden de preferencia: el `install` de CMake primero, que es el canónico.
-        for rel in ["out/share/espeak-ng-data", "out/build/espeak-ng-data"] {
-            let p = base.join(rel);
-            if p.join("phontab").is_file() {
-                println!("cargo:rerun-if-changed={}", p.display());
-                return Some(p);
+        for base in candidates {
+            // Orden de preferencia: el `install` de CMake primero, que es el canónico.
+            for rel in ["out/share/espeak-ng-data", "out/build/espeak-ng-data"] {
+                let p = base.join(rel);
+                if p.join("phontab").is_file() {
+                    println!("cargo:rerun-if-changed={}", p.display());
+                    return Some(p);
+                }
             }
         }
     }
     None
+}
+
+/// Los directorios `build/` donde cargo puede haber dejado a espeak-rs-sys.
+///
+/// Sin `--target` hay uno solo y es el nuestro. Con `--target`, las
+/// build-dependencies se compilan para el host y caen en un árbol aparte, un
+/// nivel más arriba, mientras que nuestro `OUT_DIR` queda en el del target.
+fn build_dirs(our_out_dir: &Path) -> Vec<PathBuf> {
+    // OUT_DIR = <raíz>/[<triple>/]<perfil>/build/mcpiper-<hash>/out
+    let Some(ours) = our_out_dir.parent().and_then(Path::parent) else {
+        return Vec::new();
+    };
+    let mut dirs = vec![ours.to_path_buf()];
+
+    if let Some(profile) = ours.parent() {
+        // <raíz>/<triple>/<perfil> -> <raíz>/<perfil>/build
+        if let (Some(triple), Some(name)) = (profile.parent(), profile.file_name()) {
+            if let Some(root) = triple.parent() {
+                dirs.push(root.join(name).join("build"));
+            }
+        }
+    }
+    dirs
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
