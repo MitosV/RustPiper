@@ -1,0 +1,32 @@
+[package]
+name = "mcpiper"
+version = "0.1.0"
+edition = "2021"
+description = "Piper text-to-speech as a single self-contained CLI binary"
+license = "GPL-3.0-or-later"
+default-run = "mcpiper"
+
+[[bin]]
+name = "mcpiper"
+path = "src/main.rs"
+
+[dependencies]
+piper-rs = "0.2.0"
+espeak-rs = "0.2.0"
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+vorbis_rs = { version = "0.5", default-features = false }
+hound = "3.5"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+dirs = "6.0"
+serde_json = "1.0.151"
+
+[build-dependencies]
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

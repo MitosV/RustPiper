@@ -1,0 +1,130 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Idiomas de espeak-ng que se embeben en el ejecutable. `all` los incluye todos
+  # (~8 MB extra); una lista separada por comas embebe sólo esos diccionarios.
+  MCPIPER_ESPEAK_LANGS: es,en
+
+jobs:
+  build:
+    name: ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            asset: mcpiper-linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: mcpiper-linux-aarch64
+            # Los runners ARM de GitHub sólo están en repos públicos o self-hosted.
+            optional: true
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            asset: mcpiper-macos-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: mcpiper-macos-aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias de compilación (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libclang-dev
+
+      - name: Dependencias de compilación (macOS)
+        if: runner.os == 'macOS'
+        run: cmake --version
+        # `cmake` y libclang (vía Xcode) ya vienen en la imagen.
+
+      - name: Toolchain de Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add ${{ matrix.target }}
+          rustc -vV
+
+      - name: Caché de cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ matrix.target }}-cargo-
+
+      - name: Tests
+        run: cargo test --release --target ${{ matrix.target }}
+
+      - name: Compilar
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Autodiagnóstico del binario
+        shell: bash
+        run: |
+          BIN=target/${{ matrix.target }}/release/mcpiper
+          "$BIN" --version
+          "$BIN" --self-test
+
+      - name: Empaquetar
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/mcpiper dist/
+          cp README.md USO.md LICENSE NOTICE.md dist/
+          tar -czf "${{ matrix.asset }}.tar.gz" -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}.tar.gz
+          if-no-files-found: error
+
+  # El .exe se compila en su propio workflow, que también se puede disparar solo
+  # desde la pestaña Actions sin arrastrar Linux ni macOS.
+  windows:
+    name: windows
+    uses: ./.github/workflows/windows.yml
+    with:
+      langs: es,en
+      smoke_test: true
+
+  release:
+    name: Publicar release
+    needs: [build, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Crear el release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -la artifacts
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "mcpiper ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            artifacts/*

@@ -1,0 +1,177 @@
+name: windows
+
+# Compila `mcpiper.exe` para x86_64-pc-windows-msvc.
+#
+# Se puede disparar a mano desde la pestaña Actions, y además `build.yml` lo
+# llama como parte de la matriz completa, así que el .exe se compila una sola
+# vez por run y sirve tanto para descargar suelto como para el release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      langs:
+        description: "Idiomas de espeak-ng a embeber: lista separada por comas, o `all`"
+        type: string
+        default: es,en
+      smoke_test:
+        description: "Bajar una voz real y sintetizar, para probar ONNX Runtime de punta a punta"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      langs:
+        type: string
+        default: es,en
+      smoke_test:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  TARGET: x86_64-pc-windows-msvc
+  ASSET: mcpiper-windows-x86_64
+  # Ruta corta a propósito: el árbol de CMake de espeak-ng anida mucho y con el
+  # `target/` por defecto la compilación roza el límite de 260 caracteres.
+  CARGO_TARGET_DIR: C:\mp
+
+jobs:
+  build:
+    name: mcpiper.exe (x86_64-pc-windows-msvc)
+    # Cuando GitHub retire esta imagen, `windows-2025` es el reemplazo directo:
+    # mismo toolset de VS 2022, mismo LLVM, mismo cmake.
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      MCPIPER_ESPEAK_LANGS: ${{ inputs.langs }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Habilitar rutas largas
+        # Cinturón además de los tirantes: con CARGO_TARGET_DIR corto ya alcanza,
+        # pero si alguna herramienta del build de espeak-ng arma una ruta larga
+        # igual, esto evita el clásico "filename too long". Es best-effort.
+        run: |
+          git config --global core.longpaths true
+          try {
+            New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+              -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force | Out-Null
+          } catch {
+            Write-Host "::warning::no pude habilitar LongPathsEnabled: $_"
+          }
+
+      - name: Dependencias de compilación
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          # bindgen necesita libclang.dll para generar los bindings de espeak-ng.
+          $llvm = "C:\Program Files\LLVM\bin"
+          if (-not (Test-Path "$llvm\libclang.dll")) {
+            choco install llvm -y --no-progress
+          }
+          "LIBCLANG_PATH=$llvm" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # cmake ya viene en la imagen; lo mostramos para dejarlo en el log.
+          cmake --version
+
+      - name: Toolchain de Rust
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup target add $env:TARGET
+          rustc -vV
+
+      - name: Caché del registro de cargo
+        uses: actions/cache@v4
+        with:
+          # Sólo el registro. El `target/` de este proyecto trae ONNX Runtime
+          # estático y todo el árbol de CMake de espeak-ng: son varios GB, y
+          # subirlos y bajarlos cuesta más de lo que ahorran.
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: windows-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: windows-cargo-
+
+      - name: Tests
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo test --release --locked --target $env:TARGET
+
+      - name: Compilar
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo build --release --locked --target $env:TARGET
+
+      - name: Autodiagnóstico
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $exe = "${env:CARGO_TARGET_DIR}\${env:TARGET}\release\mcpiper.exe"
+          if (-not (Test-Path $exe)) { throw "no se generó $exe" }
+          "EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $exe --version
+          & $exe --self-test
+          "tamaño: {0:N1} MB" -f ((Get-Item $exe).Length / 1MB)
+
+      - name: DLLs que necesita el ejecutable
+        # Informativo: confirma que lo único dinámico es la CRT de Microsoft
+        # (VC++ Redistributable) más DLLs del propio Windows.
+        continue-on-error: true
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          $dumpbin = (Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" |
+            Select-Object -First 1).FullName
+          & $dumpbin /nologo /dependents ${env:EXE}
+
+      - name: Prueba de humo con una voz real
+        if: inputs.smoke_test != false
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          # es_MX-ald-x_low es la voz más liviana del repositorio (~21 MB).
+          $b = "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/ald/x_low"
+          New-Item -ItemType Directory -Force -Path voz | Out-Null
+          curl.exe -sSLf -o voz/prueba.onnx      "$b/es_MX-ald-x_low.onnx"
+          curl.exe -sSLf -o voz/prueba.onnx.json "$b/es_MX-ald-x_low.onnx.json"
+
+          & $env:EXE --model voz/prueba --list-speakers
+          & $env:EXE --model voz/prueba --text "Hola. Esto lo dijo la integración continua." --output salida.ogg
+          & $env:EXE --model voz/prueba --text "Y esto salió en WAV." --output salida.wav
+
+          $ogg = [System.IO.File]::ReadAllBytes("salida.ogg")
+          if ($ogg.Length -lt 4000) {
+            throw "el .ogg salió sospechosamente chico: $($ogg.Length) bytes"
+          }
+          if ([System.Text.Encoding]::ASCII.GetString([byte[]]$ogg[0..3]) -ne "OggS") {
+            throw "el .ogg no arranca con la firma OggS"
+          }
+          "ogg: $($ogg.Length) bytes / wav: $((Get-Item salida.wav).Length) bytes"
+
+      - name: Empaquetar
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $env:EXE dist/
+          Copy-Item README.md, USO.md, LICENSE, NOTICE.md dist/
+          Compress-Archive -Path dist/* -DestinationPath "${env:ASSET}.zip" -Force
+          Get-ChildItem "${env:ASSET}.zip" | Format-List Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}.zip
+          if-no-files-found: error
