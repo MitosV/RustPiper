@@ -1,39 +1,39 @@
 # mcpiper
 
-Text-to-speech con [Piper](https://github.com/rhasspy/piper) en **un solo
-ejecutable**. Sin Python, sin DLLs sueltas, sin instalar espeak-ng: bajás el
-binario, le pasás un modelo y un texto, y te devuelve un `.ogg`.
+Text-to-speech with [Piper](https://github.com/rhasspy/piper) in **a single
+executable**. No Python, no loose DLLs, no espeak-ng to install: download the
+binary, hand it a model and some text, and it gives you back an `.ogg`.
 
 ```
 mcpiper --model ./model/ana --text "Hola" -o ./out.ogg
 ```
 
-**[→ Guía de uso completa (USO.md)](USO.md)** — opciones, recetas, velocidad de
-lectura, modelos multi-voz y solución de problemas.
+**[→ Full usage guide (USAGE.md)](USAGE.md)** — options, recipes, reading speed,
+multi-voice models and troubleshooting.
 
-## Qué trae adentro
+## What is inside
 
 | | |
 |---|---|
-| Inferencia | ONNX Runtime enlazado estáticamente |
-| Fonemización | espeak-ng compilado adentro, con sus datos embebidos y comprimidos |
-| Salida | Ogg Vorbis (por defecto) o WAV |
-| Peso | ~23 MB, un único archivo |
-| Velocidad | ~25-30× tiempo real en un x86_64 moderno, sólo CPU |
+| Inference | ONNX Runtime, statically linked |
+| Phonemization | espeak-ng compiled in, with its data embedded and compressed |
+| Output | Ogg Vorbis (default) or WAV |
+| Size | ~23 MB, a single file |
+| Speed | ~25-30× realtime on a modern x86_64, CPU only |
 
-Lo único que queda afuera es el **modelo de voz** (`.onnx` + `.onnx.json`), que
-pesa ~60 MB y se elige aparte.
+The only thing left out is the **voice model** (`.onnx` + `.onnx.json`), which
+weighs ~60 MB and is chosen separately.
 
-## Instalación
+## Installation
 
-Hay binarios para **Windows x86_64** y **macOS Apple Silicon** en la pestaña
-*Releases*; bajalo y ponelo en el PATH. Para Linux o macOS Intel, ver
-[Compilar](#compilar).
+There are binaries for **Windows x86_64** and **macOS Apple Silicon** under the
+*Releases* tab; download one and put it on your PATH. For Linux or macOS Intel,
+see [Building](#building).
 
 ```bash
 # macOS
 chmod +x mcpiper
-./mcpiper --self-test          # verifica que corra en esta máquina
+./mcpiper --self-test          # checks that it runs on this machine
 ```
 
 ```powershell
@@ -41,18 +41,18 @@ chmod +x mcpiper
 .\mcpiper.exe --self-test
 ```
 
-> **Windows**: el ejecutable usa el runtime de Visual C++ (`vcruntime140.dll`,
-> `msvcp140.dll`), que viene con el [VC++ Redistributable
-> 2015-2022](https://aka.ms/vs/17/release/vc_redist.x64.exe). Está instalado en
-> prácticamente cualquier Windows que haya corrido una app moderna, pero si
-> `mcpiper.exe` no arranca, ése es el paquete que falta. No se puede evitar: el
-> ONNX Runtime precompilado que usamos está enlazado contra el CRT dinámico.
+> **Windows**: the executable uses the Visual C++ runtime (`vcruntime140.dll`,
+> `msvcp140.dll`), which ships with the [VC++ Redistributable
+> 2015-2022](https://aka.ms/vs/17/release/vc_redist.x64.exe). It is installed on
+> practically any Windows that has run a modern app, but if `mcpiper.exe` does
+> not start, that is the missing package. There is no way around it: the
+> prebuilt ONNX Runtime we use is linked against the dynamic CRT.
 
-## Conseguir una voz
+## Getting a voice
 
-Los modelos oficiales están en
+The official models live at
 [huggingface.co/rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices).
-Cada voz son dos archivos, el `.onnx` y su `.onnx.json`.
+Every voice is two files, the `.onnx` and its `.onnx.json`.
 
 ```bash
 mkdir -p model
@@ -61,175 +61,176 @@ curl -L -o model/ana.onnx      $B/es_ES-davefx-medium.onnx
 curl -L -o model/ana.onnx.json $B/es_ES-davefx-medium.onnx.json
 ```
 
-El nombre que les pongas no importa mientras el JSON se llame igual que el
-`.onnx` más `.json`. `--model ./model/ana` encuentra `ana.onnx` y
-`ana.onnx.json` solo.
+The name you give them does not matter as long as the JSON is named the same as
+the `.onnx` plus `.json`. `--model ./model/ana` finds `ana.onnx` and
+`ana.onnx.json` on its own.
 
-## Uso
+## Usage
 
 ```bash
-# Lo básico
+# The basics
 mcpiper --model ./model/ana --text "Hola" -o ./out.ogg
 
-# Desde un archivo de texto
-mcpiper -m ./model/ana -f guion.txt -o narracion.ogg
+# From a text file
+mcpiper -m ./model/ana -f script.txt -o narration.ogg
 
-# Desde una tubería, escribiendo a la salida estándar
+# From a pipe, writing to standard output
 echo "Hola mundo" | mcpiper -m ./model/ana -o - > out.ogg
 
-# WAV sin comprimir
+# Uncompressed WAV
 mcpiper -m ./model/ana -t "Hola" -o out.wav
 
-# Más lento y con menos variación en la entonación
+# Slower and with less variation in the delivery
 mcpiper -m ./model/ana -t "Hola" --length-scale 1.2 --noise-scale 0.5 -o out.ogg
 
-# Modelos con varias voces
+# Multi-voice models
 mcpiper -m ./model/multi --list-speakers
 mcpiper -m ./model/multi -t "Hola" --speaker Ana -o out.ogg
 ```
 
-### Opciones
+### Options
 
-| Opción | Qué hace |
+| Option | What it does |
 |---|---|
-| `-m, --model <RUTA>` | El `.onnx`, su nombre sin extensión, o un directorio con uno |
-| `-c, --config <RUTA>` | El JSON, si no está al lado del modelo |
-| `-t, --text <TEXTO>` | Texto a leer (si falta, se lee de stdin) |
-| `-f, --text-file <RUTA>` | Texto desde un archivo |
-| `-o, --output <RUTA>` | Salida; `-` escribe a stdout |
-| `--format vorbis\|wav` | Por defecto sale del sufijo: `.ogg`/`.oga` → Vorbis, `.wav` → WAV |
-| `--quality <Q>` | Calidad VBR de Vorbis, de `-0.2` a `1.0` (por defecto `0.3`, ~52 kbps) |
-| `--bitrate <BPS>` | Bitrate medio, en vez de apuntar a una calidad |
-| `-s, --speaker <NOMBRE\|ID>` | Voz, en modelos multi-hablante |
-| `--list-speakers` | Lista las voces del modelo y sale |
-| `--length-scale <F>` | Velocidad: `>1` más lento, `<1` más rápido |
-| `--noise-scale <F>` | Variación de la entonación |
-| `--noise-w <F>` | Variación de la duración de cada fonema |
-| `--sentence-silence <SEG>` | Pausa entre frases (por defecto `0.2`) |
-| `--phonemes` | La entrada ya son fonemas IPA; saltea espeak-ng |
-| `--espeak-data <DIR>` | Usar un `espeak-ng-data` del disco en vez del embebido |
-| `--self-test` | Verifica el binario sin necesitar un modelo |
-| `-q, --quiet` | No imprimir el resumen |
+| `-m, --model <PATH>` | The `.onnx`, its name without the extension, or a directory holding one |
+| `-c, --config <PATH>` | The JSON, if it is not next to the model |
+| `-t, --text <TEXT>` | Text to read (if absent, it is read from stdin) |
+| `-f, --text-file <PATH>` | Text from a file |
+| `-o, --output <PATH>` | Output; `-` writes to stdout |
+| `--format vorbis\|wav` | By default it follows the suffix: `.ogg`/`.oga` → Vorbis, `.wav` → WAV |
+| `--quality <Q>` | Vorbis VBR quality, from `-0.2` to `1.0` (default `0.3`, ~52 kbps) |
+| `--bitrate <BPS>` | Average bitrate, instead of targeting a quality |
+| `-s, --speaker <NAME\|ID>` | Voice, on multi-speaker models |
+| `--list-speakers` | Lists the model's voices and exits |
+| `--length-scale <F>` | Speed: `>1` slower, `<1` faster |
+| `--noise-scale <F>` | Intonation variation |
+| `--noise-w <F>` | Per-phoneme duration variation |
+| `--sentence-silence <SEC>` | Pause between sentences (default `0.2`) |
+| `--phonemes` | The input is already IPA phonemes; skips espeak-ng |
+| `--espeak-data <DIR>` | Use an `espeak-ng-data` from disk instead of the embedded one |
+| `--self-test` | Checks the binary without needing a model |
+| `-q, --quiet` | Do not print the summary |
 
-## Idiomas
+## Languages
 
-El binario trae los diccionarios de espeak-ng de **español e inglés**. Alcanza
-para cualquier voz Piper de esos idiomas; con una voz de otro idioma, espeak-ng
-falla al fonemizar.
+The binary carries the espeak-ng dictionaries for **Spanish and English**. That
+is enough for any Piper voice in those languages; with a voice in another
+language, espeak-ng fails to phonemize.
 
-Para incluir más idiomas, se elige al compilar:
+To include more languages, pick them at build time:
 
 ```bash
-MCPIPER_ESPEAK_LANGS=es,en,pt,fr cargo build --release   # +unos pocos cientos de KB
-MCPIPER_ESPEAK_LANGS=all         cargo build --release   # los ~100 idiomas, +4 MB
+MCPIPER_ESPEAK_LANGS=es,en,pt,fr cargo build --release   # +a few hundred KB
+MCPIPER_ESPEAK_LANGS=all         cargo build --release   # all ~100 languages, +4 MB
 ```
 
-También se puede apuntar a un `espeak-ng-data` externo en tiempo de ejecución con
-`--espeak-data`, sin recompilar.
+You can also point at an external `espeak-ng-data` at runtime with
+`--espeak-data`, without rebuilding.
 
-## Compilar
+## Building
 
-Hace falta Rust estable, CMake y libclang (para `bindgen`).
+You need stable Rust, CMake and libclang (for `bindgen`).
 
 ```bash
 # Debian/Ubuntu
 sudo apt-get install -y cmake libclang-dev
 # Arch
 sudo pacman -S --needed cmake clang
-# macOS: cmake por brew, libclang viene con Xcode
+# macOS: cmake from brew, libclang comes with Xcode
 brew install cmake
 
 cargo build --release
 cargo test --release
 ```
 
-El binario queda en `target/release/mcpiper`. La primera compilación tarda unos
-minutos: se compila espeak-ng con CMake, se compilan libvorbis y libogg, y se baja el ONNX
-Runtime precompilado.
+The binary lands in `target/release/mcpiper`. The first build takes a few
+minutes: espeak-ng is compiled with CMake, libvorbis and libogg are compiled, and
+the prebuilt ONNX Runtime is downloaded.
 
-Dos cosas del build que conviene saber:
+Two things about the build worth knowing:
 
-- **espeak-ng se compila dos veces.** `mcpiper` declara `espeak-rs-sys` también
-  como build-dependency. No la usa desde el código: es la única forma de que
-  cargo garantice que el `espeak-ng-data` exista antes de que corra nuestro
-  `build.rs`, que es el que lo empaqueta dentro del ejecutable. Las
-  build-dependencies usan otro perfil, así que nunca se unifican con las normales.
-- **La ruta del proyecto no puede ser muy profunda.** espeak-ng guarda su
-  directorio de datos en un buffer de 160 caracteres, y durante el build esa ruta
-  es `<target>/release/build/espeak-rs-sys-<hash>/out/build` (unos 60 caracteres
-  más que el directorio del proyecto). Si se pasa, la compilación de los datos
-  falla con `Error processing file '.../phsource/intonation'`. Con
-  `CARGO_TARGET_DIR` corto se arregla.
+- **espeak-ng gets compiled twice.** `mcpiper` also declares `espeak-rs-sys` as a
+  build dependency. It never uses it from code: that is the only way to make
+  cargo guarantee `espeak-ng-data` exists before our `build.rs` runs, which is
+  what packs it into the executable. Build dependencies use a different profile,
+  so they never unify with the normal ones.
+- **The project path cannot be very deep.** espeak-ng keeps its data directory in
+  a 160-character buffer, and during the build that path is
+  `<target>/release/build/espeak-rs-sys-<hash>/out/build` (some 60 characters
+  more than the project directory). If it overflows, compiling the data fails
+  with `Error processing file '.../phsource/intonation'`. A short
+  `CARGO_TARGET_DIR` fixes it.
 
-### Binarios publicados
+### Published binaries
 
-`.github/workflows/build.yml` compila en un runner nativo de macOS Apple Silicon
-y llama a `.github/workflows/windows.yml` para el `.exe`. Corre los tests y el
-`--self-test` en las dos, y al pushear un tag `vX.Y.Z` publica un release con
-ambos artefactos.
+`.github/workflows/build.yml` builds on a native macOS Apple Silicon runner and
+calls `.github/workflows/windows.yml` for the `.exe`. It runs the tests and
+`--self-test` on both, and pushing a `vX.Y.Z` tag publishes a release with both
+artifacts.
 
-Son las dos plataformas que se publican. En Linux, y en macOS Intel, hay que
-compilar desde el código —funciona igual, sólo que no hay binario listo—. Para
-volver a publicarlas alcanza con agregar la entrada correspondiente a la matriz
-de `build.yml`.
+Those are the two platforms that get published. On Linux, and on macOS Intel,
+you have to build from source — it works just the same, there is simply no
+ready-made binary. To publish them again, adding the matching entry to
+`build.yml`'s matrix is enough.
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-**Sólo Windows**: `windows.yml` también se dispara solo, desde *Actions →
-windows → Run workflow*, sin arrastrar el job de macOS. Deja
-`mcpiper-windows-x86_64.zip` como artefacto del run y acepta dos parámetros:
+**Windows only**: `windows.yml` can also be triggered on its own, from *Actions →
+windows → Run workflow*, without dragging the macOS job along. It leaves
+`mcpiper-windows-x86_64.zip` as a run artifact and takes two parameters:
 
-| Parámetro | Por defecto | Qué hace |
+| Parameter | Default | What it does |
 |---|---|---|
-| `langs` | `es,en` | Idiomas de espeak-ng a embeber; `all` los mete todos |
-| `smoke_test` | activado | Baja una voz real y sintetiza, para probar ONNX Runtime de punta a punta |
+| `langs` | `es,en` | espeak-ng languages to embed; `all` puts them all in |
+| `smoke_test` | on | Downloads a real voice and synthesizes, to exercise ONNX Runtime end to end |
 
-Desde la línea de comandos, con el [CLI de GitHub](https://cli.github.com):
+From the command line, with the [GitHub CLI](https://cli.github.com):
 
 ```bash
 gh workflow run windows.yml -f langs=es,en -f smoke_test=true
 gh run watch
 ```
 
-No se cross-compila desde una sola máquina a propósito: el stack lleva tres
-proyectos en C/C++ con CMake, y compilar en cada sistema operativo es mucho más
-confiable que pelearse con toolchains cruzados.
+Cross-compilation is deliberately avoided: the stack carries three C/C++ projects
+built with CMake, and compiling on each operating system is far more reliable
+than fighting with cross toolchains.
 
-## Cómo funciona
+## How it works
 
 ```
-texto ──> espeak-ng ──> fonemas IPA ──> tabla del modelo ──> ids
-                                                              │
-                                                              ▼
-                                          ONNX Runtime (VITS) ──> PCM f32 @22050
-                                                              │
-                                                  libvorbis   ▼
-                                            (a 22050 Hz nativo) ──> paquetes Vorbis
-                                                              │
-                                            contenedor Ogg    ▼
-                                                          out.ogg
+text ──> espeak-ng ──> IPA phonemes ──> model table ──> ids
+                                                         │
+                                                         ▼
+                                     ONNX Runtime (VITS) ──> PCM f32 @22050
+                                                         │
+                                             libvorbis   ▼
+                                      (at 22050 Hz native) ──> Vorbis packets
+                                                         │
+                                          Ogg container  ▼
+                                                     out.ogg
 ```
 
-Un par de detalles que importan:
+A few details that matter:
 
-- **El texto se corta en frases** antes de sintetizar. Cada frase pasa por el
-  modelo por separado y se pega con `--sentence-silence` de silencio en el
-  medio, que suena mucho mejor que darle un párrafo entero de una.
-- **espeak-ng sólo sabe leer sus datos del disco.** En el primer arranque
-  `mcpiper` los descomprime en la caché del usuario
-  (`~/.cache/mcpiper/espeak-<hash>` en Linux) y se los pasa por variable de
-  entorno. Los arranques siguientes reusan esa copia. El hash está en el nombre,
-  así que actualizar el binario no deja basura vieja en uso.
-- **Vorbis codifica a la frecuencia nativa del modelo**, sean 22050 o 16000 Hz.
-  No hay remuestreo en el medio, así que no se pierde nada por ese lado.
-- **El serial del flujo Ogg se deriva del contenido** en vez de sortearse, que
-  es lo que hace la mayoría de los codificadores. Con `--noise-scale 0
-  --noise-w 0`, el mismo texto produce siempre el mismo archivo byte a byte.
+- **The text is split into sentences** before synthesis. Each sentence goes
+  through the model separately and they are glued together with
+  `--sentence-silence` of silence in between, which sounds far better than
+  feeding it a whole paragraph at once.
+- **espeak-ng only knows how to read its data from disk.** On the first run
+  `mcpiper` unpacks it into the user's cache (`~/.cache/mcpiper/espeak-<hash>` on
+  Linux) and hands it over through an environment variable. Later runs reuse that
+  copy. The hash is in the name, so updating the binary leaves no stale data in
+  use.
+- **Vorbis encodes at the model's native frequency**, be it 22050 or 16000 Hz.
+  There is no resampling in between, so nothing is lost on that account.
+- **The Ogg stream serial is derived from the content** instead of being drawn at
+  random, which is what most encoders do. With `--noise-scale 0 --noise-w 0`, the
+  same text always produces the same file byte for byte.
 
-## Licencia
+## License
 
-GPL-3.0-or-later. Se enlaza espeak-ng estáticamente, que es GPL-3, así que el
-conjunto lo es. Ver [NOTICE.md](NOTICE.md) para el detalle de cada componente y
-la nota sobre la licencia de los modelos de voz.
+GPL-3.0-or-later. espeak-ng is linked statically and it is GPL-3, so the whole is
+too. See [NOTICE.md](NOTICE.md) for the per-component detail and the note about
+the voice models' licensing.

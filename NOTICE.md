@@ -1,23 +1,24 @@
-# Licencias de terceros
+# Third-party licenses
 
-`mcpiper` enlaza estáticamente estos proyectos dentro del ejecutable:
+`mcpiper` statically links these projects into the executable:
 
-| Proyecto | Licencia | Rol |
+| Project | License | Role |
 |---|---|---|
-| [espeak-ng](https://github.com/espeak-ng/espeak-ng) | **GPL-3.0-or-later** | Fonemización del texto (y los datos `espeak-ng-data` embebidos) |
-| [piper-rs](https://github.com/thewh1teagle/piper-rs) | MIT | Inferencia del modelo Piper |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | Ejecución de la red neuronal |
-| [libvorbis / aoTuV](https://xiph.org/vorbis/) | BSD-3-Clause | Codificación de audio Vorbis |
-| [libogg](https://xiph.org/ogg/) | BSD-3-Clause | Contenedor Ogg |
+| [espeak-ng](https://github.com/espeak-ng/espeak-ng) | **GPL-3.0-or-later** | Text phonemization (and the embedded `espeak-ng-data`) |
+| [piper-rs](https://github.com/thewh1teagle/piper-rs) | MIT | Piper model inference |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | Neural network execution |
+| [libvorbis / aoTuV](https://xiph.org/vorbis/) | BSD-3-Clause | Vorbis audio encoding |
+| [libogg](https://xiph.org/ogg/) | BSD-3-Clause | Ogg container |
 
-Como espeak-ng es GPL-3.0-or-later y se enlaza de forma estática, **el ejecutable
-resultante en su conjunto queda bajo la GPL-3.0-or-later**. Por eso `mcpiper` se
-publica con esa licencia: es la única compatible con todo lo que lleva adentro.
+Because espeak-ng is GPL-3.0-or-later and is linked statically, **the resulting
+executable as a whole falls under GPL-3.0-or-later**. That is why `mcpiper` is
+published under that license: it is the only one compatible with everything it
+carries inside.
 
-Si necesitás una licencia más permisiva para redistribuir, la salida es sacar
-espeak-ng del binario y llamarlo como proceso externo, o reemplazar la
-fonemización por otro motor.
+If you need a more permissive license to redistribute, the way out is to take
+espeak-ng out of the binary and call it as an external process, or to replace
+phonemization with another engine.
 
-Los **modelos de voz** de Piper tienen su propia licencia, que depende de cada voz
-(muchas son CC BY 4.0 o CC0). Revisá la ficha de la voz que uses; no se
-distribuyen con este programa.
+Piper's **voice models** carry their own license, which varies per voice (many
+are CC BY 4.0 or CC0). Check the model card of the voice you use; they are not
+distributed with this program.

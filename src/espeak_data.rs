@@ -1,8 +1,8 @@
-//! Extracción de los datos de espeak-ng embebidos en el ejecutable.
+//! Unpacking of the espeak-ng data embedded in the executable.
 //!
-//! espeak-ng solo sabe leer su `espeak-ng-data/` desde el disco, así que en el
-//! primer arranque volcamos el archivo embebido a la caché del usuario y le
-//! pasamos esa ruta por `PIPER_ESPEAKNG_DATA_DIRECTORY`.
+//! espeak-ng only knows how to read its `espeak-ng-data/` from disk, so on the
+//! first run we dump the embedded archive into the user's cache and hand that
+//! path over through `PIPER_ESPEAKNG_DATA_DIRECTORY`.
 
 use std::fs;
 use std::io::Read;
@@ -15,11 +15,11 @@ const HASH: &str = env!("MCPIPER_ESPEAK_HASH");
 const MAGIC: &[u8; 5] = b"MCPD1";
 const READY: &str = ".ready";
 
-/// Idiomas incluidos en este binario, tal como se pidieron en tiempo de compilación.
+/// Languages included in this binary, exactly as requested at build time.
 pub const LANGS: &str = env!("MCPIPER_ESPEAK_LANGS_BUILT");
 
-/// Deja `espeak-ng-data` disponible en disco y devuelve el directorio *padre*,
-/// que es lo que espera `PIPER_ESPEAKNG_DATA_DIRECTORY`.
+/// Makes `espeak-ng-data` available on disk and returns its *parent* directory,
+/// which is what `PIPER_ESPEAKNG_DATA_DIRECTORY` expects.
 pub fn ensure(override_dir: Option<&Path>) -> Result<PathBuf> {
     if let Some(dir) = override_dir {
         return resolve_override(dir);
@@ -30,12 +30,12 @@ pub fn ensure(override_dir: Option<&Path>) -> Result<PathBuf> {
         return Ok(base);
     }
 
-    // Extraemos a un directorio temporal y renombramos, para que dos procesos
-    // simultáneos no se pisen a mitad de la escritura.
+    // Unpack into a staging directory and rename, so two concurrent processes
+    // cannot trample each other halfway through writing.
     let staging = base.with_extension(format!("tmp{}", std::process::id()));
     let _ = fs::remove_dir_all(&staging);
     unpack(&staging.join("espeak-ng-data"))
-        .with_context(|| format!("extrayendo espeak-ng-data en {}", staging.display()))?;
+        .with_context(|| format!("unpacking espeak-ng-data into {}", staging.display()))?;
     fs::write(staging.join(READY), HASH)?;
 
     if let Some(parent) = base.parent() {
@@ -43,19 +43,19 @@ pub fn ensure(override_dir: Option<&Path>) -> Result<PathBuf> {
     }
     match fs::rename(&staging, &base) {
         Ok(()) => {}
-        // Otro proceso llegó primero: su copia es idéntica (el hash está en el nombre).
+        // Another process got there first: its copy is identical (the hash is in the name).
         Err(_) if base.join(READY).is_file() => {
             let _ = fs::remove_dir_all(&staging);
         }
         Err(e) => {
             let _ = fs::remove_dir_all(&staging);
-            return Err(e).context("instalando espeak-ng-data en la caché");
+            return Err(e).context("installing espeak-ng-data into the cache");
         }
     }
     Ok(base)
 }
 
-/// Acepta tanto `.../espeak-ng-data` como el directorio que lo contiene.
+/// Accepts either `.../espeak-ng-data` or the directory containing it.
 fn resolve_override(dir: &Path) -> Result<PathBuf> {
     if dir.join("espeak-ng-data").join("phontab").is_file() {
         return Ok(dir.to_path_buf());
@@ -64,10 +64,10 @@ fn resolve_override(dir: &Path) -> Result<PathBuf> {
         return dir
             .parent()
             .map(Path::to_path_buf)
-            .ok_or_else(|| anyhow!("`{}` no tiene directorio padre", dir.display()));
+            .ok_or_else(|| anyhow!("`{}` has no parent directory", dir.display()));
     }
     bail!(
-        "`{}` no parece un espeak-ng-data válido (no encontré `phontab`)",
+        "`{}` does not look like a valid espeak-ng-data (no `phontab` found)",
         dir.display()
     )
 }
@@ -77,7 +77,7 @@ fn cache_root() -> Result<PathBuf> {
         .unwrap_or_else(std::env::temp_dir)
         .join("mcpiper");
     fs::create_dir_all(&dir)
-        .with_context(|| format!("creando la caché en {}", dir.display()))?;
+        .with_context(|| format!("creating the cache at {}", dir.display()))?;
     Ok(dir)
 }
 
@@ -87,7 +87,7 @@ fn unpack(dest: &Path) -> Result<()> {
 
     let mut cur = Reader { buf: &raw, pos: 0 };
     if cur.take(MAGIC.len())? != MAGIC {
-        bail!("el archivo embebido de espeak-ng está corrupto");
+        bail!("the embedded espeak-ng archive is corrupt");
     }
     let count = cur.u32()?;
 
@@ -102,17 +102,17 @@ fn unpack(dest: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&path, data).with_context(|| format!("escribiendo {}", path.display()))?;
+        fs::write(&path, data).with_context(|| format!("writing {}", path.display()))?;
     }
     Ok(())
 }
 
-/// El archivo lo generamos nosotros, pero igual rechazamos rutas que se escapen del destino.
+/// We generate the archive ourselves, but still reject paths that escape the destination.
 fn safe_join(dest: &Path, name: &str) -> Result<PathBuf> {
     let mut path = dest.to_path_buf();
     for part in name.split('/') {
         if part.is_empty() || part == "." || part == ".." {
-            bail!("ruta inválida en el archivo embebido: `{name}`");
+            bail!("invalid path in the embedded archive: `{name}`");
         }
         path.push(part);
     }
@@ -130,7 +130,7 @@ impl<'a> Reader<'a> {
             .pos
             .checked_add(n)
             .filter(|e| *e <= self.buf.len())
-            .ok_or_else(|| anyhow!("el archivo embebido de espeak-ng está truncado"))?;
+            .ok_or_else(|| anyhow!("the embedded espeak-ng archive is truncated"))?;
         let slice = &self.buf[self.pos..end];
         self.pos = end;
         Ok(slice)

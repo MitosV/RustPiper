@@ -9,8 +9,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Idiomas de espeak-ng que se embeben en el ejecutable. `all` los incluye todos
-  # (~8 MB extra); una lista separada por comas embebe sólo esos diccionarios.
+  # espeak-ng languages embedded in the executable. `all` includes every one of
+  # them (~8 MB extra); a comma-separated list embeds only those dictionaries.
   MCPIPER_ESPEAK_LANGS: es,en
 
 jobs:
@@ -28,23 +28,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Dependencias de compilación
+      - name: Build dependencies
         run: cmake --version
-        # `cmake` y libclang (vía Xcode) ya vienen en la imagen de macOS.
+        # `cmake` and libclang (via Xcode) already ship in the macOS image.
 
-      - name: Toolchain de Rust
+      - name: Rust toolchain
         run: |
           rustup update stable --no-self-update
           rustup default stable
           rustc -vV
-          # Compilamos nativo, sin --target: con --target cargo separa las
-          # unidades de host y de target y espeak-ng se compila dos veces (la
-          # build-dependency que ordena el build es una unidad de host). El
-          # triple del runner ya es el que queremos; lo verificamos.
+          # We build natively, without --target: with --target cargo splits the
+          # host and target units and espeak-ng is built twice (the build
+          # dependency that orders the build is a host unit). The runner's triple
+          # is already the one we want; verify it.
           rustc -vV | grep -qx 'host: ${{ matrix.target }}' \
-            || { echo "el runner no es ${{ matrix.target }}"; rustc -vV; exit 1; }
+            || { echo "the runner is not ${{ matrix.target }}"; rustc -vV; exit 1; }
 
-      - name: Caché de cargo
+      - name: Cargo cache
         uses: actions/cache@v4
         with:
           path: |
@@ -54,28 +54,28 @@ jobs:
             target
           key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ matrix.target }}-cargo-
-        # `matrix.target` acá es sólo la clave de la caché y el nombre del
-        # artefacto; ya no se le pasa a cargo.
+        # `matrix.target` here is only the cache key and the artifact name; it is
+        # no longer passed to cargo.
 
       - name: Tests
         run: cargo test --release --locked
 
-      - name: Compilar
+      - name: Build
         run: cargo build --release --locked
 
-      - name: Autodiagnóstico del binario
+      - name: Self-test
         shell: bash
         run: |
           BIN=target/release/mcpiper
           "$BIN" --version
           "$BIN" --self-test
 
-      - name: Empaquetar
+      - name: Package
         shell: bash
         run: |
           mkdir -p dist
           cp target/release/mcpiper dist/
-          cp README.md USO.md LICENSE NOTICE.md dist/
+          cp README.md USAGE.md LICENSE NOTICE.md dist/
           tar -czf "${{ matrix.asset }}.tar.gz" -C dist .
 
       - uses: actions/upload-artifact@v4
@@ -84,8 +84,8 @@ jobs:
           path: ${{ matrix.asset }}.tar.gz
           if-no-files-found: error
 
-  # El .exe se compila en su propio workflow, que también se puede disparar solo
-  # desde la pestaña Actions sin arrastrar Linux ni macOS.
+  # The .exe is built in its own workflow, which can also be triggered on its own
+  # from the Actions tab without dragging macOS along.
   windows:
     name: windows
     uses: ./.github/workflows/windows.yml
@@ -94,7 +94,7 @@ jobs:
       smoke_test: true
 
   release:
-    name: Publicar release
+    name: Publish release
     needs: [build, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -106,7 +106,7 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Crear el release
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

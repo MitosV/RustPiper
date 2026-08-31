@@ -1,8 +1,8 @@
-//! Compila los datos de espeak-ng dentro del binario.
+//! Bakes the espeak-ng data into the binary.
 //!
-//! `espeak-rs-sys` construye espeak-ng con CMake y deja `espeak-ng-data/` en su
-//! `OUT_DIR`. Acá lo localizamos, filtramos los diccionarios por idioma, y
-//! empaquetamos todo en un archivo gzip que `include_bytes!` mete en el ejecutable.
+//! `espeak-rs-sys` builds espeak-ng with CMake and leaves `espeak-ng-data/` in its
+//! `OUT_DIR`. Here we locate it, filter the dictionaries by language, and pack
+//! everything into a gzip archive that `include_bytes!` pulls into the executable.
 
 use std::fs;
 use std::io::Write;
@@ -17,9 +17,9 @@ fn main() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
     let data_dir = locate_espeak_data(&out_dir).unwrap_or_else(|| {
         panic!(
-            "no encontré `espeak-ng-data`. Se esperaba que el build de espeak-rs-sys \
-             lo generara en alguno de estos directorios:\n  {}\n\
-             Podés apuntarlo a mano con MCPIPER_ESPEAK_DATA_DIR=/ruta/a/espeak-ng-data",
+            "could not find `espeak-ng-data`. The espeak-rs-sys build was expected to \
+             generate it in one of these directories:\n  {}\n\
+             You can point at it by hand with MCPIPER_ESPEAK_DATA_DIR=/path/to/espeak-ng-data",
             build_dirs(&out_dir)
                 .iter()
                 .map(|p| p.display().to_string())
@@ -34,13 +34,13 @@ fn main() {
     let mut files = Vec::new();
     collect(&data_dir, &data_dir, &filter, &mut files);
     files.sort_by(|a, b| a.0.cmp(&b.0));
-    assert!(!files.is_empty(), "espeak-ng-data está vacío: {}", data_dir.display());
+    assert!(!files.is_empty(), "espeak-ng-data is empty: {}", data_dir.display());
 
     let mut raw = Vec::new();
     raw.extend_from_slice(MAGIC);
     raw.extend_from_slice(&(files.len() as u32).to_le_bytes());
     for (rel, abs) in &files {
-        let bytes = fs::read(abs).unwrap_or_else(|e| panic!("leyendo {}: {e}", abs.display()));
+        let bytes = fs::read(abs).unwrap_or_else(|e| panic!("reading {}: {e}", abs.display()));
         raw.extend_from_slice(&(rel.len() as u16).to_le_bytes());
         raw.extend_from_slice(rel.as_bytes());
         raw.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
@@ -48,23 +48,23 @@ fn main() {
     }
 
     let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
-    enc.write_all(&raw).expect("comprimiendo espeak-ng-data");
-    let packed = enc.finish().expect("comprimiendo espeak-ng-data");
+    enc.write_all(&raw).expect("compressing espeak-ng-data");
+    let packed = enc.finish().expect("compressing espeak-ng-data");
 
     let dest = out_dir.join("espeak-data.gz");
-    fs::write(&dest, &packed).expect("escribiendo espeak-data.gz");
+    fs::write(&dest, &packed).expect("writing espeak-data.gz");
 
     println!("cargo:rustc-env=MCPIPER_ESPEAK_HASH={:016x}", fnv1a(&packed));
     println!("cargo:rustc-env=MCPIPER_ESPEAK_LANGS_BUILT={langs}");
     println!(
-        "cargo:warning=espeak-ng-data: {} archivos, {} KiB en crudo -> {} KiB embebidos (idiomas: {langs})",
+        "cargo:warning=espeak-ng-data: {} files, {} KiB raw -> {} KiB embedded (languages: {langs})",
         files.len(),
         raw.len() / 1024,
         packed.len() / 1024
     );
 }
 
-/// Qué diccionarios de idioma se embeben. `all` los incluye todos.
+/// Which language dictionaries get embedded. `all` includes every one of them.
 enum LangFilter {
     All,
     Only(Vec<String>),
@@ -83,11 +83,12 @@ impl LangFilter {
         )
     }
 
-    /// Los `*_dict` son el 80% del peso; el resto (phondata, lang/, voices/) va siempre.
+    /// The `*_dict` files are 80% of the weight; everything else (phondata, lang/,
+    /// voices/) always goes in.
     fn keeps_dict(&self, lang: &str) -> bool {
         match self {
             Self::All => true,
-            // `es` habilita `es_dict`; un modelo `es-419` usa igual ese diccionario.
+            // `es` enables `es_dict`; an `es-419` model uses that dictionary anyway.
             Self::Only(list) => list.iter().any(|l| l == lang),
         }
     }
@@ -106,7 +107,7 @@ fn collect(root: &Path, dir: &Path, filter: &LangFilter, out: &mut Vec<(String, 
         }
         let rel = path
             .strip_prefix(root)
-            .expect("ruta dentro de espeak-ng-data")
+            .expect("path inside espeak-ng-data")
             .to_string_lossy()
             .replace('\\', "/");
         if let Some(lang) = rel.strip_suffix("_dict") {
@@ -119,10 +120,10 @@ fn collect(root: &Path, dir: &Path, filter: &LangFilter, out: &mut Vec<(String, 
     }
 }
 
-/// Busca `espeak-ng-data` en el `OUT_DIR` de espeak-rs-sys.
+/// Looks for `espeak-ng-data` in espeak-rs-sys's `OUT_DIR`.
 ///
-/// Que exista está garantizado por la build-dependency declarada en `Cargo.toml`;
-/// acá sólo hay que dar con la carpeta.
+/// That it exists at all is guaranteed by the build-dependency declared in
+/// `Cargo.toml`; here we only have to find the folder.
 fn locate_espeak_data(our_out_dir: &Path) -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("MCPIPER_ESPEAK_DATA_DIR") {
         let p = PathBuf::from(dir);
@@ -144,12 +145,12 @@ fn locate_espeak_data(our_out_dir: &Path) -> Option<PathBuf> {
                 .collect(),
             Err(_) => continue,
         };
-        // Varias carpetas `espeak-rs-sys-*` conviven (script vs salida); preferimos la más nueva.
+        // Several `espeak-rs-sys-*` folders coexist (script vs output); prefer the newest.
         candidates.sort();
         candidates.reverse();
 
         for base in candidates {
-            // Orden de preferencia: el `install` de CMake primero, que es el canónico.
+            // Order of preference: CMake's `install` first, which is the canonical one.
             for rel in ["out/share/espeak-ng-data", "out/build/espeak-ng-data"] {
                 let p = base.join(rel);
                 if p.join("phontab").is_file() {
@@ -162,20 +163,20 @@ fn locate_espeak_data(our_out_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Los directorios `build/` donde cargo puede haber dejado a espeak-rs-sys.
+/// The `build/` directories where cargo may have left espeak-rs-sys.
 ///
-/// Sin `--target` hay uno solo y es el nuestro. Con `--target`, las
-/// build-dependencies se compilan para el host y caen en un árbol aparte, un
-/// nivel más arriba, mientras que nuestro `OUT_DIR` queda en el del target.
+/// Without `--target` there is only one and it is ours. With `--target`, build
+/// dependencies are compiled for the host and land in a separate tree one level
+/// up, while our own `OUT_DIR` stays in the target's tree.
 fn build_dirs(our_out_dir: &Path) -> Vec<PathBuf> {
-    // OUT_DIR = <raíz>/[<triple>/]<perfil>/build/mcpiper-<hash>/out
+    // OUT_DIR = <root>/[<triple>/]<profile>/build/mcpiper-<hash>/out
     let Some(ours) = our_out_dir.parent().and_then(Path::parent) else {
         return Vec::new();
     };
     let mut dirs = vec![ours.to_path_buf()];
 
     if let Some(profile) = ours.parent() {
-        // <raíz>/<triple>/<perfil> -> <raíz>/<perfil>/build
+        // <root>/<triple>/<profile> -> <root>/<profile>/build
         if let (Some(triple), Some(name)) = (profile.parent(), profile.file_name()) {
             if let Some(root) = triple.parent() {
                 dirs.push(root.join(name).join("build"));

@@ -1,4 +1,4 @@
-//! Carga del modelo Piper y síntesis frase por frase.
+//! Piper model loading and sentence-by-sentence synthesis.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -6,56 +6,56 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use piper_rs::{ModelConfig, Piper};
 
-/// Parámetros de generación. `None` = usar lo que traiga el modelo en su JSON.
+/// Generation parameters. `None` = use whatever the model's JSON carries.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Options {
     pub speaker_id: Option<i64>,
     pub length_scale: Option<f32>,
     pub noise_scale: Option<f32>,
     pub noise_w: Option<f32>,
-    /// Silencio insertado entre frases, en segundos.
+    /// Silence inserted between sentences, in seconds.
     pub sentence_silence: f32,
-    /// El texto de entrada ya son fonemas IPA: saltearse espeak-ng.
+    /// The input text is already IPA phonemes: skip espeak-ng.
     pub input_is_phonemes: bool,
 }
 
 pub struct Voice {
     piper: Piper,
-    /// Segunda copia del JSON: `Piper` no expone su configuración interna.
+    /// A second copy of the JSON: `Piper` does not expose its internal config.
     config: ModelConfig,
 }
 
 impl Voice {
     pub fn load(model: &Path, config_path: &Path) -> Result<Self> {
         let json = std::fs::read_to_string(config_path)
-            .with_context(|| format!("leyendo la configuración `{}`", config_path.display()))?;
-        // `Piper` se queda con su propia `ModelConfig` sin exponerla, así que
-        // mantenemos una copia nuestra para los metadatos (voz, hablantes, rate).
+            .with_context(|| format!("reading the configuration `{}`", config_path.display()))?;
+        // `Piper` keeps its own `ModelConfig` without exposing it, so we hold a
+        // copy of our own for the metadata (voice, speakers, sample rate).
         let config: ModelConfig = serde_json::from_str(&json)
-            .with_context(|| format!("interpretando `{}`", config_path.display()))?;
+            .with_context(|| format!("parsing `{}`", config_path.display()))?;
         let piper = Piper::new(model, config_path).map_err(|e| anyhow!("{e}"))?;
         let voice = Self { piper, config };
         voice.check_espeak_voice()?;
         Ok(voice)
     }
 
-    /// Falla temprano si el binario no trae el diccionario del idioma del modelo.
+    /// Fails early if the binary does not carry the dictionary for the model's language.
     ///
-    /// Cuando falta, espeak-ng no devuelve error: escribe una queja por stderr y
-    /// entrega cero fonemas, con lo que el fallo aparecería recién al sintetizar
-    /// y disfrazado de "texto vacío". Lo detectamos con una palabra de prueba.
+    /// When it is missing, espeak-ng does not return an error: it writes a complaint
+    /// to stderr and hands back zero phonemes, so the failure would only surface at
+    /// synthesis time, disguised as "empty text". We catch it with a probe word.
     fn check_espeak_voice(&self) -> Result<()> {
         let voice = &self.config.espeak.voice;
         let probe = espeak_rs::text_to_phonemes("abcde", voice, None)
-            .map_err(|e| anyhow!("el modelo pide la voz espeak-ng `{voice}`: {e}"))?;
+            .map_err(|e| anyhow!("the model asks for the espeak-ng voice `{voice}`: {e}"))?;
         if probe.iter().any(|s| !s.trim().is_empty()) {
             return Ok(());
         }
         bail!(
-            "este binario no trae los datos de espeak-ng para la voz `{voice}` que pide el modelo \
-             (incluye: {}).\n  \
-             Opciones: recompilar con MCPIPER_ESPEAK_LANGS=\"{},{}\", o pasar \
-             --espeak-data con un espeak-ng-data completo del sistema.",
+            "this binary does not carry the espeak-ng data for the voice `{voice}` the model \
+             asks for (it includes: {}).\n  \
+             Options: rebuild with MCPIPER_ESPEAK_LANGS=\"{},{}\", or pass --espeak-data \
+             pointing at a full espeak-ng-data from the system.",
             crate::espeak_data::LANGS,
             crate::espeak_data::LANGS,
             voice.split(['-', '_']).next().unwrap_or(voice)
@@ -78,7 +78,7 @@ impl Voice {
         self.config.num_speakers
     }
 
-    /// Traduce `--speaker` (nombre o número) al id que espera el modelo.
+    /// Translates `--speaker` (a name or a number) into the id the model expects.
     pub fn resolve_speaker(&self, spec: &str) -> Result<i64> {
         if let Some(id) = self.config.speaker_id_map.get(spec) {
             return Ok(*id);
@@ -88,33 +88,33 @@ impl Voice {
                 return Ok(id);
             }
             bail!(
-                "el hablante {id} está fuera de rango: el modelo tiene {}",
+                "speaker {id} is out of range: the model has {}",
                 self.config.num_speakers
             );
         }
         let mut known: Vec<&str> = self.config.speaker_id_map.keys().map(String::as_str).collect();
         known.sort_unstable();
         if known.is_empty() {
-            bail!("este modelo tiene una sola voz, `--speaker` no aplica");
+            bail!("this model has a single voice, `--speaker` does not apply");
         }
-        bail!("no conozco al hablante `{spec}`. Disponibles: {}", known.join(", "))
+        bail!("unknown speaker `{spec}`. Available: {}", known.join(", "))
     }
 
-    /// Divide el texto en frases con espeak-ng y sintetiza cada una por separado,
-    /// para poder meter una pausa natural entre ellas.
+    /// Splits the text into sentences with espeak-ng and synthesizes each one
+    /// separately, so a natural pause can be placed between them.
     pub fn synthesize(&mut self, text: &str, opts: &Options) -> Result<Vec<f32>> {
         let sentences: Vec<String> = if opts.input_is_phonemes {
             vec![text.to_string()]
         } else {
             espeak_rs::text_to_phonemes(text, self.config.espeak.voice.as_str(), None)
-                .map_err(|e| anyhow!("fonemizando el texto: {e}"))?
+                .map_err(|e| anyhow!("phonemizing the text: {e}"))?
         };
         let sentences: Vec<String> = sentences
             .into_iter()
             .filter(|s| !s.trim().is_empty())
             .collect();
         if sentences.is_empty() {
-            bail!("el texto no produjo ningún fonema; ¿está vacío o es solo puntuación?");
+            bail!("the text produced no phonemes; is it empty, or only punctuation?");
         }
 
         let gap = (self.config.audio.sample_rate as f32 * opts.sentence_silence.max(0.0)) as usize;
@@ -133,21 +133,21 @@ impl Voice {
                     opts.noise_scale,
                     opts.noise_w,
                 )
-                .map_err(|e| anyhow!("sintetizando la frase {}: {e}", i + 1))?;
+                .map_err(|e| anyhow!("synthesizing sentence {}: {e}", i + 1))?;
             audio.extend_from_slice(&chunk);
         }
         Ok(audio)
     }
 }
 
-/// Acepta `voz`, `voz.onnx` o un directorio con un único `.onnx` adentro.
+/// Accepts `voice`, `voice.onnx`, or a directory holding a single `.onnx`.
 pub fn resolve_model(spec: &Path) -> Result<PathBuf> {
     if spec.is_file() {
         return Ok(spec.to_path_buf());
     }
     if spec.is_dir() {
         let mut found: Vec<PathBuf> = std::fs::read_dir(spec)
-            .with_context(|| format!("listando `{}`", spec.display()))?
+            .with_context(|| format!("listing `{}`", spec.display()))?
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|e| e == "onnx"))
@@ -155,9 +155,9 @@ pub fn resolve_model(spec: &Path) -> Result<PathBuf> {
         found.sort();
         return match found.len() {
             1 => Ok(found.remove(0)),
-            0 => bail!("`{}` no contiene ningún archivo .onnx", spec.display()),
+            0 => bail!("`{}` contains no .onnx file", spec.display()),
             n => bail!(
-                "`{}` contiene {n} modelos .onnx; indicá cuál con --model ruta/al/modelo.onnx",
+                "`{}` contains {n} .onnx models; say which one with --model path/to/model.onnx",
                 spec.display()
             ),
         };
@@ -169,14 +169,14 @@ pub fn resolve_model(spec: &Path) -> Result<PathBuf> {
         return Ok(with_ext);
     }
     bail!(
-        "no encontré el modelo: probé `{}` y `{}`",
+        "could not find the model: tried `{}` and `{}`",
         spec.display(),
         with_ext.display()
     )
 }
 
-/// Piper publica la configuración como `<modelo>.onnx.json`; algunos paquetes
-/// la distribuyen como `<modelo>.json`.
+/// Piper publishes the configuration as `<model>.onnx.json`; some packages
+/// distribute it as `<model>.json`.
 pub fn config_path_for(model: &Path) -> Option<PathBuf> {
     let candidates = [
         append_extension(model, "json"),
