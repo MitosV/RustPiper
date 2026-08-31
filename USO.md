@@ -19,11 +19,12 @@ comando hasta las recetas menos obvias.
 
 ## Instalación
 
-Bajá el binario de tu plataforma desde *Releases*. Es un solo archivo, no
-instala nada, no toca el registro ni el sistema.
+Hay binarios para **Windows x86_64** y **macOS Apple Silicon** en *Releases*. Es
+un solo archivo, no instala nada, no toca el registro ni el sistema. En Linux o
+macOS Intel hay que compilar desde el código: ver el README.
 
 ```bash
-# Linux / macOS
+# macOS
 chmod +x mcpiper
 sudo mv mcpiper /usr/local/bin/     # opcional, para tenerlo en el PATH
 mcpiper --self-test

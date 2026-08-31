@@ -26,10 +26,12 @@ pesa ~60 MB y se elige aparte.
 
 ## Instalación
 
-Bajá el binario de tu plataforma desde la pestaña *Releases* y ponelo en el PATH.
+Hay binarios para **Windows x86_64** y **macOS Apple Silicon** en la pestaña
+*Releases*; bajalo y ponelo en el PATH. Para Linux o macOS Intel, ver
+[Compilar](#compilar).
 
 ```bash
-# Linux / macOS
+# macOS
 chmod +x mcpiper
 ./mcpiper --self-test          # verifica que corra en esta máquina
 ```
@@ -159,20 +161,24 @@ Dos cosas del build que conviene saber:
   falla con `Error processing file '.../phsource/intonation'`. Con
   `CARGO_TARGET_DIR` corto se arregla.
 
-### Binarios para las tres plataformas
+### Binarios publicados
 
-`.github/workflows/build.yml` compila en runners nativos de Linux (x86_64 y
-aarch64) y macOS (Intel y Apple Silicon), y llama a
-`.github/workflows/windows.yml` para el `.exe`. Corre los tests y el
-`--self-test` en cada plataforma, y al pushear un tag `vX.Y.Z` publica un
-release con todos los artefactos.
+`.github/workflows/build.yml` compila en un runner nativo de macOS Apple Silicon
+y llama a `.github/workflows/windows.yml` para el `.exe`. Corre los tests y el
+`--self-test` en las dos, y al pushear un tag `vX.Y.Z` publica un release con
+ambos artefactos.
+
+Son las dos plataformas que se publican. En Linux, y en macOS Intel, hay que
+compilar desde el código —funciona igual, sólo que no hay binario listo—. Para
+volver a publicarlas alcanza con agregar la entrada correspondiente a la matriz
+de `build.yml`.
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
 **Sólo Windows**: `windows.yml` también se dispara solo, desde *Actions →
-windows → Run workflow*, sin arrastrar Linux ni macOS. Deja
+windows → Run workflow*, sin arrastrar el job de macOS. Deja
 `mcpiper-windows-x86_64.zip` como artefacto del run y acepta dos parámetros:
 
 | Parámetro | Por defecto | Qué hace |
